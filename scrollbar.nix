@@ -9,7 +9,6 @@ let
   enabled = cfg.enable || (legacyCfg.enable or false);
   pkg = if cfg.package != defaultPackage then cfg.package else (legacyCfg.package or cfg.package);
   position = cfg.position;
-  layer = cfg.layer;
   height = if cfg.height != 1 then cfg.height else (legacyCfg.height or cfg.height);
   speed = if cfg.speed != 12.0 then cfg.speed else (legacyCfg.speed or cfg.speed);
 in
@@ -29,16 +28,10 @@ in
       description = "Screen edge to attach the scrollbar to: 'top', 'bottom', 'left', or 'right'.";
     };
 
-    layer = lib.mkOption {
-      type = lib.types.enum [ "overlay" "top" ];
-      default = "overlay";
-      description = "Wayland layer to place the scrollbar on ('overlay' ensures it sits on top of existing bars/docks).";
-    };
-
     height = lib.mkOption {
       type = lib.types.int;
       default = 1;
-      description = "Trigger thickness in pixels at the screen edge (default: 1, preserves full usage and detection of underlying bars/docks).";
+      description = "Trigger thickness in pixels at the screen edge (default: 1, strictly on TOP layer, preserves full usage and detection of underlying bars/docks).";
     };
 
     speed = lib.mkOption {
@@ -55,6 +48,11 @@ in
       type = lib.types.package;
       default = defaultPackage;
       description = "Legacy alias for package.";
+    };
+    position = lib.mkOption {
+      type = lib.types.enum [ "top" "bottom" "left" "right" ];
+      default = "top";
+      description = "Legacy alias for position.";
     };
     height = lib.mkOption {
       type = lib.types.int;
@@ -83,7 +81,7 @@ in
       };
 
       Service = {
-        ExecStart = "${pkg}/bin/wayland-scrollbar --position ${position} --layer ${layer} --height ${toString height} --speed ${toString speed}";
+        ExecStart = "${pkg}/bin/wayland-scrollbar --position ${position} --height ${toString height} --speed ${toString speed}";
         Restart = "on-failure";
         RestartSec = "3";
       };

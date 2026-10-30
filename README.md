@@ -2,14 +2,16 @@
 
 An **invisible screen-edge drag bar** for scrolling Wayland compositors (such as **Niri** and **Umbriel**).
 
-Attached directly to screen edges (**top**, **bottom**, **left**, or **right**) on the **`OVERLAY` layer**, it sits right on top of existing layers in-line with your bar or dock, but utilizes an ultra-thin 1-pixel edge trigger so it **never impedes the usage, clicks, or hover detection** of the bars and docks underneath it.
+Attached directly to screen edges (**top**, **bottom**, **left**, or **right**) strictly on the **`TOP` layer** (never `OVERLAY`), it sits right in-line with your bar or dock at the screen edge, but utilizes an ultra-thin 1-pixel edge trigger with `exclusive_zone = -1` so it **never impedes the usage, clicks, or hover detection** of the bars and docks underneath it, and **never interferes with fullscreen games or overlay elements**.
 
 ---
 
 ## ✨ Features
 
 - **Direct Screen Edge Attachment**: Attached directly to the screen edge (in-line with your bar or dock) with 0 offset.
-- **On Top of Existing Layer (`OVERLAY`)**: Runs on layer `OVERLAY` so it sits above your shell's bar and dock.
+- **Strictly `TOP` Layer (Never `OVERLAY`)**:
+  - Fullscreen games and applications automatically cover the `TOP` layer surfaces, ensuring mouse movement and pointer confinement in games are **never impeded**.
+  - Existing overlay elements (notifications, lock screens, OSDs) sit above on `OVERLAY` unimpeded.
 - **Zero Collision / Impairment**: Uses an ultra-thin 1-pixel hairline trigger at the physical screen edge ($y=0$):
   - Flinging your mouse to the physical edge lets you click and drag to smoothly scroll your workspaces.
   - Hovering and clicking on your bar buttons, tray icons, menus, and dock icons ($y \ge 1$) works **100% unimpeded** with full hover detection and magnification.
@@ -33,7 +35,6 @@ Attached directly to screen edges (**top**, **bottom**, **left**, or **right**) 
   services.waylandScrollbar = {
     enable = true;
     position = "top";    # "top", "bottom", "left", or "right" (default: "top")
-    layer = "overlay";   # "overlay" (sits on top of bar/dock) or "top"
     height = 1;          # 1px edge hairline trigger (default: 1, preserves full bar/dock usage)
     speed = 12.0;        # Gesture sensitivity multiplier (default: 12.0)
   };
@@ -65,11 +66,11 @@ To enable smooth trackpad gesture emulation without manually configuring udev ru
 Run directly with Python:
 
 ```bash
-# Attach directly to the top edge (on top of existing bar):
-python3 wayland_scrollbar.py --position top --layer overlay --height 1
+# Attach directly to the top edge:
+python3 wayland_scrollbar.py --position top --height 1
 
-# Or attach directly to the bottom edge (on top of existing dock):
-python3 wayland_scrollbar.py --position bottom --layer overlay --height 1
+# Or attach directly to the bottom edge:
+python3 wayland_scrollbar.py --position bottom --height 1
 ```
 
 See [NON_NIX_GUIDE.md](./NON_NIX_GUIDE.md) for distro package prerequisites.
