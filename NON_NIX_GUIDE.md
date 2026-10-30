@@ -20,21 +20,18 @@ Ensure you have the following installed on your system:
 Run the script:
 
 ```bash
-# Attach right below your top bar (auto-detected thickness)
-python3 wayland_scrollbar.py --position top --offset auto
+# Attach directly to the top edge (on top of existing bar without impeding it):
+python3 wayland_scrollbar.py --position top --layer overlay --height 1
 
-# Or attach on left screen edge to completely avoid top bar and bottom dock
-python3 wayland_scrollbar.py --position left
-
-# Or manually specify an offset (e.g. 34px below the top edge)
-python3 wayland_scrollbar.py --position top --offset 34
+# Or attach directly to the bottom edge (on top of existing dock):
+python3 wayland_scrollbar.py --position bottom --layer overlay --height 1
 ```
 
 The script will:
-1. Connect to the display and automatically detect your compositor and shell elements (e.g. Noctalia bar/dock).
-2. Attach an invisible drag strip on layer `TOP`, offset so it never conflicts with your bar buttons or dock icons.
+1. Connect to the display and attach a 1-pixel hairline trigger strip right on the screen edge on layer `OVERLAY`.
+2. Because it only occupies 1 pixel at the absolute screen edge, hovering, clicking, tooltips, and magnification on the bar and dock below remain 100% unimpeded.
 3. Check if `/dev/uinput` is writable:
-   - If accessible: creates a virtual touchpad and provides smooth 3-finger trackpad scrolling when clicking & dragging.
+   - If accessible: creates a virtual touchpad and provides smooth 3-finger trackpad scrolling when clicking & dragging at the screen edge.
    - If restricted: logs a note and falls back to compositor IPC column navigation—no crashes!
 
 ---
@@ -72,7 +69,7 @@ PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/python3 /path/to/wayland_scrollbar.py --position top --offset auto
+ExecStart=/usr/bin/python3 /path/to/wayland_scrollbar.py --position top --layer overlay --height 1
 Restart=on-failure
 RestartSec=3
 

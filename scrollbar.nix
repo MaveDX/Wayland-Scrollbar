@@ -9,8 +9,8 @@ let
   enabled = cfg.enable || (legacyCfg.enable or false);
   pkg = if cfg.package != defaultPackage then cfg.package else (legacyCfg.package or cfg.package);
   position = cfg.position;
-  offsetArg = if cfg.offset == "auto" then "--offset auto" else "--offset ${toString cfg.offset}";
-  height = if cfg.height != 10 then cfg.height else (legacyCfg.height or cfg.height);
+  layer = cfg.layer;
+  height = if cfg.height != 1 then cfg.height else (legacyCfg.height or cfg.height);
   speed = if cfg.speed != 12.0 then cfg.speed else (legacyCfg.speed or cfg.speed);
 in
 {
@@ -29,16 +29,16 @@ in
       description = "Screen edge to attach the scrollbar to: 'top', 'bottom', 'left', or 'right'.";
     };
 
-    offset = lib.mkOption {
-      type = lib.types.either lib.types.int (lib.types.enum [ "auto" ]);
-      default = "auto";
-      description = "Offset in pixels from screen edge, or 'auto' to automatically avoid bars/docks.";
+    layer = lib.mkOption {
+      type = lib.types.enum [ "overlay" "top" ];
+      default = "overlay";
+      description = "Wayland layer to place the scrollbar on ('overlay' ensures it sits on top of existing bars/docks).";
     };
 
     height = lib.mkOption {
       type = lib.types.int;
-      default = 10;
-      description = "Height/thickness in pixels of the invisible drag bar.";
+      default = 1;
+      description = "Trigger thickness in pixels at the screen edge (default: 1, preserves full usage and detection of underlying bars/docks).";
     };
 
     speed = lib.mkOption {
@@ -58,7 +58,7 @@ in
     };
     height = lib.mkOption {
       type = lib.types.int;
-      default = 10;
+      default = 1;
       description = "Legacy alias for height.";
     };
     speed = lib.mkOption {
@@ -83,7 +83,7 @@ in
       };
 
       Service = {
-        ExecStart = "${pkg}/bin/wayland-scrollbar --position ${position} ${offsetArg} --height ${toString height} --speed ${toString speed}";
+        ExecStart = "${pkg}/bin/wayland-scrollbar --position ${position} --layer ${layer} --height ${toString height} --speed ${toString speed}";
         Restart = "on-failure";
         RestartSec = "3";
       };
