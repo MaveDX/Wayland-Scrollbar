@@ -1,121 +1,85 @@
 { config, pkgs, lib, ... }:
 
 let
+  cfg = config.services.waylandScrollbar;
+  legacyCfg = config.services.niriScrollbar;
+  defaultPackage = pkgs.callPackage ./package.nix { };
 
-# 1. Package the Python Daemon
-
-scrollDaemon = pkgs.writers.writePython3Bin "niri-scroll-daemon" {
-
-libraries = [ pkgs.python3Packages.evdev ];
-
-flakeIgnore = [ "E" "F" "W" ]; # Ignores all flake8 formatting/syntax warnings
-
-} (builtins.readFile ./niri-scroll-daemon.py);
-
-# 2. Package the Astal TypeScript Files
-
-scrollbarUI = pkgs.stdenv.mkDerivation {
-
-name = "niri-scrollbar-ui";
-
-src = ./.;
-
-installPhase = ''
-
-mkdir -p $out/share/niri-scrollbar
-
-cp main.ts niri-scrollbar.ts $out/share/niri-scrollbar/
-
-'';
-
-};
-
+  # Merge legacy niriScrollbar options if used
+  enabled = cfg.enable || (legacyCfg.enable or false);
+  pkg = if cfg.package != defaultPackage then cfg.package else (legacyCfg.package or cfg.package);
+  position = cfg.position;
+  height = if cfg.height != 10 then cfg.height else (legacyCfg.height or cfg.height);
+  speed = if cfg.speed != 12.0 then cfg.speed else (legacyCfg.speed or cfg.speed);
 in
-
 {
+  options.services.waylandScrollbar = {
+    enable = lib.mkEnableOption "Wayland Invisible Scrollbar user service (Niri, Umbriel)";
 
-# Define the option
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = defaultPackage;
+      description = "The wayland-scrollbar package to use.";
+    };
 
-options.services.niriScrollbar = {
+    position = lib.mkOption {
+      type = lib.types.enum [ "top" "bottom" ];
+      default = "top";
+      description = "Screen edge to attach the scrollbar to: 'top' or 'bottom'.";
+    };
 
-enable = lib.mkOption {
+    height = lib.mkOption {
+      type = lib.types.int;
+      default = 10;
+      description = "Height/thickness in pixels of the invisible drag bar.";
+    };
 
-type = lib.types.bool;
+    speed = lib.mkOption {
+      type = lib.types.float;
+      default = 12.0;
+      description = "Trackpad gesture scroll sensitivity multiplier.";
+    };
+  };
 
-default = false;
+  # Backwards compatibility options
+  options.services.niriScrollbar = {
+    enable = lib.mkEnableOption "Legacy alias for services.waylandScrollbar";
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = defaultPackage;
+      description = "Legacy alias for package.";
+    };
+    height = lib.mkOption {
+      type = lib.types.int;
+      default = 10;
+      description = "Legacy alias for height.";
+    };
+    speed = lib.mkOption {
+      type = lib.types.float;
+      default = 12.0;
+      description = "Legacy alias for speed.";
+    };
+  };
 
-description = "Enable the Niri Scrollbar daemon and UI services.";
+  config = lib.mkIf enabled {
+    home.packages = [ pkg ];
 
-};
+    systemd.user.services.wayland-scrollbar = {
+      Unit = {
+        Description = "Wayland Invisible Scrollbar Service (Niri, Umbriel)";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
 
-};
+      Install = {
+        WantedBy = [ "graphical-session.target" ];
+      };
 
-# Only enable services if the option is true
-
-config = lib.mkIf config.services.niriScrollbar.enable {
-
-# 3. Define Systemd User Services
-
-systemd.user.services.niri-scroll-daemon = {
-
-Unit = {
-
-Description = "Niri Scrollbar Socket Daemon";
-
-PartOf = [ "graphical-session.target" ];
-
-};
-
-Install = {
-
-WantedBy = [ "graphical-session.target" ];
-
-};
-
-Service = {
-
-ExecStart = "${scrollDaemon}/bin/niri-scroll-daemon";
-
-Restart = "always";
-
-RestartSec = "3";
-
-};
-
-};
-
-systemd.user.services.niri-scrollbar-ui = {
-
-Unit = {
-
-Description = "Niri Scrollbar Astal UI";
-
-Requires = [ "niri-scroll-daemon.service" ];
-
-After = [ "niri-scroll-daemon.service" "graphical-session.target" ];
-
-PartOf = [ "graphical-session.target" ];
-
-};
-
-Install = {
-
-WantedBy = [ "graphical-session.target" ];
-
-};
-
-Service = {
-
-ExecStart = "${pkgs.ags}/bin/ags run ${scrollbarUI}/share/niri-scrollbar/main.ts";
-
-Restart = "on-failure";
-
-RestartSec = "3";
-
-};
-
-};
-
-};
-
+      Service = {
+        ExecStart = "${pkg}/bin/wayland-scrollbar --position ${position} --height ${toString height} --speed ${toString speed}";
+        Restart = "on-failure";
+        RestartSec = "3";
+      };
+    };
+  };
 }

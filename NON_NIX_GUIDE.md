@@ -1,121 +1,85 @@
-# Running Niri Scrollbar on Non-NixOS Distributions 🐧
+# Running on Non-NixOS Distributions 🐧
 
-If you are not using NixOS or Nix Flakes, you can still run this project manually. This guide covers setting up the necessary permissions, Python dependencies, and the TypeScript frontend.
+If you are not using Nix Flakes or NixOS, you can run the invisible scrollbar directly using Python.
 
 ## 📋 Prerequisites
 
-Before starting, ensure you have the following installed on your system:
+Ensure you have the following installed on your system:
 
-- **Python 3**
-- **Python `evdev` library**
-- **Node.js & npm** (for the TypeScript UI)
-- **A Wayland compositor** (specifically [Niri](https://github.com/YaLTeR/niri))
+1. **Python 3** (with `python3-pip`)
+2. **GTK 3** and **GTK Layer Shell**:
+   - **Arch Linux**: `sudo pacman -S gtk3 gtk-layer-shell python-gobject python-evdev`
+   - **Fedora**: `sudo dnf install gtk3 gtk-layer-shell python3-gobject python3-evdev`
+   - **Ubuntu/Debian**: `sudo apt install libgtk-3-0 libgtk-layer-shell0 python3-gi python3-evdev gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1`
+3. A running Wayland compositor (**Niri** or **Umbriel**).
 
 ---
 
-## 🛠️ Step 1: Hardware Permissions (Crucial)
+## 🚀 Running Directly
 
-The Python daemon creates a virtual input device using `/dev/uinput`. By default, most Linux distributions restrict access to this file for security reasons.
+Run the script:
 
-### Option A: The Permanent Way (Recommended)
-Create a `udev` rule to allow the `input` group to access `uinput`.
+```bash
+# Attach to the top of all monitors (default)
+python3 wayland_scrollbar.py --position top --height 10 --speed 12.0
 
-1. Create a new rule file:
-   ```bash
-   sudo nano /etc/udev/rules.d/99-uinput.rules
-   ```
-2. Paste the following line into the file:
-   ```text
-   KERNEL=="uinput", GROUP="input", MODE="0660"
-   ```
-3. Save and exit.
-4. Add your user to the `input` group:
+# Attach to the bottom of all monitors
+python3 wayland_scrollbar.py --position bottom --height 10 --speed 12.0
+```
+
+The script will:
+1. Attach an invisible drag strip along the top or bottom edge of all monitors on layer `TOP`.
+2. Connect to the display and detect your compositor (**Umbriel** or **Niri**).
+3. Check if `/dev/uinput` is writable:
+   - If accessible: creates a virtual touchpad and provides smooth 3-finger trackpad scrolling when clicking & dragging.
+   - If restricted: logs a note and falls back to compositor IPC column navigation—no crashes!
+
+---
+
+## ⚙️ (Optional) Enabling Smooth Gesture Emulation
+
+If you want smooth hardware gesture emulation instead of discrete IPC scrolling, grant access to `/dev/uinput`:
+
+1. Add your user to the `input` group:
    ```bash
    sudo usermod -aG input $USER
    ```
-5. **Reboot your computer** (or log out and back in) for the group changes to take effect.
-
-### Option B: The Quick/Temporary Way (For Testing Only)
-If you just want to see if it works immediately without rebooting:
-```bash
-sudo chmod 666 /dev/uinput
-```
-*Note: This setting will disappear when you reboot.*
+2. Create `/etc/udev/rules.d/99-uinput.rules`:
+   ```text
+   KERNEL=="uinput", GROUP="input", MODE="0660", TAG+="uaccess"
+   ```
+3. Reload udev rules:
+   ```bash
+   sudo udevadm control --reload-rules && sudo udevadm trigger
+   ```
+   (or log out and log back in).
 
 ---
 
-## 🐍 Step 2: Setting up the Python Daemon
+## 🔄 Systemd User Service
 
-1. Navigate to the project directory.
-2. Install the `evdev` dependency:
-   ```bash
-   pip install evdev
-   ```
-3. Test the daemon:
-   ```bash
-   python niri-scroll-daemon.py
-   ```
-   *If you don't see permission errors, your udev rules are working!*
+To start the scrollbar automatically on login:
 
----
+Create `~/.config/systemd/user/wayland-scrollbar.service`:
 
-## 🟦 Step 3: Setting up the TypeScript UI
-
-1. Open a new terminal window.
-2. Install the Node dependencies:
-   ```bash
-   npm install
-   ```
-3. Run the UI:
-   ```bash
-   npm start
-   ```
-   *(Note: Depending on your setup, you may need to use `npx ts-node main.ts` if there is no start script defined in `package.json`.)*
-
----
-
-## ⚙️ Running as a Background Service (Systemd)
-
-To avoid running two terminals every time you boot, you can create a user-level `systemd` service.
-
-### 1. Create the Daemon Service
-Create `~/.config/systemd/user/niri-scroll-daemon.service`:
 ```ini
 [Unit]
-Description=Niri Scrollbar Python Daemon
+Description=Wayland Invisible Scrollbar
+PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/python /path/to/your/niri-scroll-daemon.py
-Restart=always
+ExecStart=/usr/bin/python3 /path/to/wayland_scrollbar.py --position top --height 10 --speed 12.0
+Restart=on-failure
+RestartSec=3
 
 [Install]
 WantedBy=graphical-session.target
 ```
 
-### 2. Create the UI Service
-Create `~/.config/systemd/user/niri-scrollbar-ui.service`:
-```ini
-[Unit]
-Description=Niri Scrollbar TypeScript UI
-After=niri-scroll-daemon.service
+Enable and start:
 
-[Service]
-ExecStart=/usr/bin/npm start --prefix /path/to/your/project
-Restart=always
-
-[Install]
-WantedBy=graphical-session.target
-```
-
-### 3. Enable and Start
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now niri-scroll-daemon.service niri-scrollbar-ui.service
+systemctl --user enable --now wayland-scrollbar.service
 ```
-
-## 🔍 Troubleshooting
-
-- **"Permission Denied" on /dev/uinput**: Your `udev` rules aren't active. Ensure you are in the `input` group and have rebooted.
-- **"Connection Refused" on Socket**: The Python daemon isn't running or failed to create the socket at `/tmp/niri-scroll.sock`. Check the daemon logs.
-- **UI not appearing**: Ensure the Python daemon is running *before* you start the UI.

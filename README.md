@@ -1,80 +1,78 @@
-# Niri Scrollbar 🖱️
+# Wayland Scrollbar 🖱️
 
-> **Disclaimer:** This project is an experimental implementation made entirely with AI by an unexperienced programmer. Use with caution.
+An **invisible edge drag bar** for scrolling Wayland compositors (such as **Niri** and **Umbriel**).
 
-A gesture-driven scrollbar widget designed for the [Niri](https://github.com/YaLTeR/niri) Wayland compositor. This project combines a low-level Python daemon with a TypeScript-based UI to provide high-fidelity, gesture-based scrolling.
+Attached seamlessly to the **top** or **bottom** of all monitors on the **`TOP` layer** (not overlay), it lets you click and drag anywhere along the screen edge to smoothly scroll workspaces and columns—functioning identically to native trackpad 3-finger swipe gestures.
+
+---
 
 ## ✨ Features
 
-- **Nix Native**: Managed via Nix Flakes for reproducible installation and easy integration.
-- **Virtual Input**: Uses `evdev` to create a `virtual-touchpad` device, allowing for high-precision multi-touch gesture emulation.
-- **High Performance**: Communicates via a local Unix socket (`/tmp/niri-scroll.sock`) using a lightweight JSON protocol.
-- **Seamless Integration**: Designed to work within the Niri compositor workflow.
+- **Completely Invisible**: Zero visual UI clutter—just a thin, transparent hit zone at the edge of your monitors.
+- **Top or Bottom Position**: Configure whether the scrollbar sits along the `top` or `bottom` edge of the screen.
+- **`TOP` Layer**: Runs on the Wayland `TOP` layer with `0` exclusive zone, ensuring it never displaces or shrinks normal windows.
+- **Smooth Trackpad Emulation**: Emulates hardware 3-finger swipe gestures via `/dev/uinput` for fluid, continuous scrolling in both Niri and Umbriel.
+- **Graceful IPC Fallback**: If `/dev/uinput` permissions are not enabled, it automatically falls back to compositor IPC column navigation without crashing.
+- **Multi-Monitor Native**: Spans across all active monitors and automatically updates when displays are connected or disconnected.
+- **Mouse Wheel Support**: Rolling the scroll wheel at the edge also scrolls columns.
+- **Customizable**: Adjust trigger edge (`top` / `bottom`), thickness in pixels (default: `10`), and speed sensitivity (default: `12.0`).
 
-## 🏗️ Architecture
+---
 
-This service creates a screenwide, short and invisible scrollbar along the top of your monitor, just click, hold and drag
+## 🚀 Nix Flakes Setup
 
-The project consists of two primary layers:
-
-### 1. Backend Daemon (`niri-scroll-daemon.py`)
-A Python-based service that manages the hardware-level interaction.
-- **Input Emulation**: Creates a virtual input device capable of handling `BTN_TOUCH` and multi-finger `ABS_MT` events.
-- **Communication**: Runs a socket server that listens for JSON-encoded commands.
-
-### 2. Frontend UI (`niri-scrollbar.ts` & `main.ts`)
-A TypeScript implementation that provides the visual interface.
-- Communicates with the Python daemon via the Unix socket.
-- Translates user interactions into movement deltas sent to the backend.
-
-## 🚀 Installation
-
-This project is a **Nix Flake**.
-
-### 1. Add the Input
-Add this repository to your `flake.nix`:
-
-```nix
-inputs.niri-scrollbar.url = "github:MaveDX/Niri-Scrollbar";
-```
-
-### 2. Enable the Service (Home Manager)
-In your Home Manager configuration (e.g., `home.nix`), import the module and enable the service. **Note:** This module automatically handles the necessary `udev` rules to grant your user permission to access `/dev/uinput`.
+### 1. Home Manager (`home.nix`)
 
 ```nix
 {
   imports = [
-    niri-scrollbar.homeManagerModules.default
+    inputs.niri-scrollbar.homeManagerModules.default
   ];
 
-  services.niriScrollbar.enable = true;
+  services.waylandScrollbar = {
+    enable = true;
+    position = "top";  # "top" or "bottom" (default: "top")
+    height = 10;       # Height/thickness in pixels of the hit zone (default: 10)
+    speed = 12.0;      # Gesture sensitivity multiplier (default: 12.0)
+  };
 }
 ```
 
-### 3. Apply Changes
-Rebuild your configuration:
+*(Note: `services.niriScrollbar` is also supported as a backwards-compatible alias).*
 
-```bash
-home-manager switch
+---
+
+### 2. (Optional) Automatic uinput Permissions in NixOS (`configuration.nix`)
+
+To enable smooth trackpad gesture emulation without manually configuring udev rules or groups:
+
+```nix
+{
+  imports = [
+    inputs.niri-scrollbar.nixosModules.default
+  ];
+
+  services.waylandScrollbar.enable = true;
+}
 ```
 
-## ⚙️ Requirements & Permissions
+---
 
-### Virtual Input (`/dev/uinput`)
-The daemon requires permission to create a virtual input device. 
-- **Automatic**: If you use the `services.niriScrollbar.enable` option, the provided Nix module automatically installs the required `udev` rules.
-- **Manual**: If you are running the daemon outside of Nix, you must ensure your user is part of the `input` group or has a udev rule allowing access to `/dev/uinput`.
+## 💻 Manual / Non-Nix Usage
 
-### Systemd Lifecycle
-The services are configured to run under the `graphical-session.target`. They will start automatically when you log into a Niri session and shut down when you exit.
+Run directly with Python:
 
-## 📂 Project Structure
+```bash
+# Top edge (default)
+python3 wayland_scrollbar.py --position top --height 10 --speed 12.0
 
-- `flake.nix`: The Nix Flake entry point.
-- `niri-scroll-daemon.py`: The Python backend daemon.
-- `niri-scrollbar.ts`: The core TypeScript UI logic.
-- `main.ts`: The UI entry point.
-- `scrollbar.nix`: Nix configuration for system integration.
+# Bottom edge
+python3 wayland_scrollbar.py --position bottom --height 10 --speed 12.0
+```
+
+See [NON_NIX_GUIDE.md](./NON_NIX_GUIDE.md) for distro package prerequisites.
+
+---
 
 ## 📄 License
 
