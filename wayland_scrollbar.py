@@ -1,23 +1,59 @@
 #!/usr/bin/env python3
 """
 Wayland Scrollbar
-An invisible click-and-drag bar attached to the top or bottom of all monitors (on layer TOP, NOT OVERLAY).
-Functions like the native trackpad smooth workspace scroll featured in Niri and Umbriel.
+An invisible edge drag bar for smooth workspace scrolling in Wayland compositors (Niri, Umbriel).
+Supports placement on top, bottom, left, or right edges with auto-offset detection
+so it never obstructs or gets blocked by shell bars or docks.
 """
 
 import os
 import sys
 import argparse
+import re
 import shutil
 import subprocess
 import threading
-import time
+from pathlib import Path
 
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 gi.require_version('GtkLayerShell', '0.1')
 from gi.repository import Gtk, Gdk, GLib, GtkLayerShell
+
+
+# ─── Shell Bar / Dock Auto-Detection ──────────────────────────────────────────
+
+def detect_shell_offsets():
+    """Detect top bar height and bottom dock height from Noctalia / Waybar configs."""
+    bar_height = 0
+    dock_height = 0
+    home = Path.home()
+
+    noctalia_dirs = [
+        home / ".config/noctalia",
+        home / ".local/state/noctalia",
+        home / ".config/umbriel",
+    ]
+
+    for d in noctalia_dirs:
+        if d.is_dir():
+            for p in d.glob("*.toml"):
+                try:
+                    text = p.read_text(encoding="utf-8", errors="ignore")
+                    m_bar = re.search(r'\[.*bar.*\][^\[]*thickness\s*=\s*(\d+)', text, re.DOTALL)
+                    if m_bar:
+                        bar_height = max(bar_height, int(m_bar.group(1)))
+                    m_thick = re.search(r'thickness\s*=\s*(\d+)', text)
+                    if m_thick and bar_height == 0:
+                        bar_height = int(m_thick.group(1))
+                    m_dock = re.search(r'\[.*dock.*\][^\[]*thickness\s*=\s*(\d+)', text, re.DOTALL)
+                    if m_dock:
+                        dock_height = max(dock_height, int(m_dock.group(1)))
+                except Exception:
+                    pass
+
+    return bar_height, dock_height
 
 
 # ─── Virtual Touchpad (uinput) ────────────────────────────────────────────────
@@ -170,17 +206,20 @@ class Compositor:
             print(f"[wayland-scrollbar] Action error: {e}")
 
 
-# ─── Invisible Layer Window (Top or Bottom) ────────────────────────────────────
+# ─── Invisible Layer Window ───────────────────────────────────────────────────
 
 class InvisibleBarWindow(Gtk.Window):
-    def __init__(self, monitor, touchpad, compositor, position="top", height=10, speed=12.0):
+    def __init__(self, monitor, touchpad, compositor, position="top", offset=0, height=10, speed=12.0, margin_top=0, margin_bottom=0):
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
         self.monitor = monitor
         self.touchpad = touchpad
         self.compositor = compositor
         self.position = position.lower()
+        self.offset = offset
         self.bar_height = height
         self.speed = speed
+        self.margin_top = margin_top
+        self.margin_bottom = margin_bottom
 
         self.last_drag_x = 0
         self.last_drag_y = 0
@@ -193,32 +232,62 @@ class InvisibleBarWindow(Gtk.Window):
 
     def _setup_layer_shell(self):
         GtkLayerShell.init_for_window(self)
-        # Explicitly layer TOP (NOT OVERLAY) as requested
         GtkLayerShell.set_layer(self, GtkLayerShell.Layer.TOP)
 
-        # Dynamic anchor: Top or Bottom
+        # Configure anchors and margins based on chosen screen edge
         if self.position == "bottom":
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.BOTTOM, True)
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, False)
-        else:
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
+            GtkLayerShell.set_margin(self, GtkLayerShell.Edge.BOTTOM, self.offset)
+        elif self.position == "left":
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, False)
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.BOTTOM, True)
+            GtkLayerShell.set_margin(self, GtkLayerShell.Edge.LEFT, self.offset)
+            if self.margin_top > 0:
+                GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, self.margin_top)
+            if self.margin_bottom > 0:
+                GtkLayerShell.set_margin(self, GtkLayerShell.Edge.BOTTOM, self.margin_bottom)
+        elif self.position == "right":
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, False)
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.BOTTOM, True)
+            GtkLayerShell.set_margin(self, GtkLayerShell.Edge.RIGHT, self.offset)
+            if self.margin_top > 0:
+                GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, self.margin_top)
+            if self.margin_bottom > 0:
+                GtkLayerShell.set_margin(self, GtkLayerShell.Edge.BOTTOM, self.margin_bottom)
+        else:  # top (default)
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.BOTTOM, False)
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
+            GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, self.offset)
 
-        GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
-        GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
         GtkLayerShell.set_namespace(self, "wayland-scrollbar")
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.NONE)
-        # 0 exclusive zone so tiled windows are not displaced
         GtkLayerShell.set_exclusive_zone(self, 0)
+
         if self.monitor:
             GtkLayerShell.set_monitor(self, self.monitor)
 
     def _build_ui(self):
-        # Full-width hit box covering the top/bottom edge
         self.hit_zone = Gtk.EventBox()
         self.hit_zone.set_visible(True)
-        self.hit_zone.set_size_request(-1, self.bar_height)
-        self.hit_zone.set_hexpand(True)
+
+        if self.position in ("left", "right"):
+            self.hit_zone.set_size_request(self.bar_height, -1)
+            self.hit_zone.set_hexpand(False)
+            self.hit_zone.set_vexpand(True)
+        else:
+            self.hit_zone.set_size_request(-1, self.bar_height)
+            self.hit_zone.set_hexpand(True)
+            self.hit_zone.set_vexpand(False)
+
         self.hit_zone.get_style_context().add_class("invisible-drag-bar")
 
         self.hit_zone.add_events(
@@ -238,11 +307,10 @@ class InvisibleBarWindow(Gtk.Window):
         self.drag.connect("drag-update", self._on_drag_update)
         self.drag.connect("drag-end", self._on_drag_end)
 
-        # Retain reference to prevent Python garbage collection
         self._drag = self.drag
 
     def _on_scroll(self, _widget, event):
-        """Allow mouse wheel at the screen edge to scroll columns."""
+        """Mouse wheel scrolling on edge scrolls columns."""
         if event.direction == Gdk.ScrollDirection.UP or event.delta_y < 0 or event.delta_x < 0:
             if self.touchpad.available:
                 self.touchpad.fingers_down()
@@ -278,15 +346,21 @@ class InvisibleBarWindow(Gtk.Window):
         self.last_drag_x = offset_x
         self.last_drag_y = offset_y
 
+        # If on left/right edges, vertical motion naturally translates to ribbon scroll
+        if self.position in ("left", "right"):
+            effective_dx = dx if abs(dx) > abs(dy) else dy
+            effective_dy = 0
+        else:
+            effective_dx = dx
+            effective_dy = dy
+
         if self.touchpad.available:
-            # Emulate trackpad swipe with sensitivity scaling
-            scaled_dx = int(round(dx * self.speed))
-            scaled_dy = int(round(dy * self.speed))
+            scaled_dx = int(round(effective_dx * self.speed))
+            scaled_dy = int(round(effective_dy * self.speed))
             self.touchpad.fingers_move(scaled_dx, scaled_dy)
         else:
-            # IPC Fallback when /dev/uinput is restricted
-            self.accumulated_dx += dx
-            self.accumulated_dy += dy
+            self.accumulated_dx += effective_dx
+            self.accumulated_dy += effective_dy
             threshold = 28
 
             if self.accumulated_dx >= threshold:
@@ -312,7 +386,7 @@ class InvisibleBarWindow(Gtk.Window):
 # ─── Application Orchestrator ─────────────────────────────────────────────────
 
 class Application:
-    def __init__(self, position="top", height=10, speed=12.0):
+    def __init__(self, position="top", offset=None, height=10, speed=12.0):
         self.position = position.lower()
         self.height = height
         self.speed = speed
@@ -320,6 +394,26 @@ class Application:
         self.compositor = Compositor()
         self.windows = []
         self.display = Gdk.Display.get_default()
+
+        # Auto-detect shell bar/dock heights to prevent collision
+        detected_bar, detected_dock = detect_shell_offsets()
+
+        if offset is None or offset == "auto":
+            if self.position == "top":
+                self.offset = detected_bar
+            elif self.position == "bottom":
+                self.offset = detected_dock
+            else:
+                self.offset = 0
+        else:
+            self.offset = int(offset)
+
+        self.margin_top = detected_bar
+        self.margin_bottom = detected_dock
+
+        print(f"[wayland-scrollbar] Position: {self.position}, Offset: {self.offset}px, Height: {self.height}px")
+        if detected_bar > 0 or detected_dock > 0:
+            print(f"[wayland-scrollbar] Detected shell elements: top bar={detected_bar}px, bottom dock={detected_dock}px")
 
         self._apply_styles()
         self._setup_monitors()
@@ -329,7 +423,6 @@ class Application:
             self.display.connect("monitor-removed", lambda *_: self._setup_monitors())
 
     def _apply_styles(self):
-        # 100% invisible window; 0.5% alpha hit area ensures Wayland input event delivery
         css = """
         window {
             background-color: transparent;
@@ -362,8 +455,11 @@ class Application:
                 touchpad=self.touchpad,
                 compositor=self.compositor,
                 position=self.position,
+                offset=self.offset,
                 height=self.height,
-                speed=self.speed
+                speed=self.speed,
+                margin_top=self.margin_top,
+                margin_bottom=self.margin_bottom
             )
             self.windows.append(win)
             win.show_all()
@@ -375,9 +471,15 @@ def main():
     )
     parser.add_argument(
         "--position",
-        choices=["top", "bottom"],
+        choices=["top", "bottom", "left", "right"],
         default=os.environ.get("SCROLLBAR_POSITION", "top").lower(),
-        help="Screen edge to attach the drag bar to: 'top' or 'bottom' (default: top)"
+        help="Screen edge to attach the drag bar to: 'top', 'bottom', 'left', or 'right' (default: top)"
+    )
+    parser.add_argument(
+        "--offset",
+        type=str,
+        default=os.environ.get("SCROLLBAR_OFFSET", "auto"),
+        help="Offset in pixels from screen edge, or 'auto' to automatically avoid bars/docks (default: auto)"
     )
     parser.add_argument(
         "--height",
@@ -393,7 +495,14 @@ def main():
     )
     args = parser.parse_args()
 
-    app = Application(position=args.position, height=args.height, speed=args.speed)
+    offset_val = "auto" if str(args.offset).lower() == "auto" else int(args.offset)
+
+    app = Application(
+        position=args.position,
+        offset=offset_val,
+        height=args.height,
+        speed=args.speed
+    )
     try:
         Gtk.main()
     except KeyboardInterrupt:

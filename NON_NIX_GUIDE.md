@@ -20,16 +20,19 @@ Ensure you have the following installed on your system:
 Run the script:
 
 ```bash
-# Attach to the top of all monitors (default)
-python3 wayland_scrollbar.py --position top --height 10 --speed 12.0
+# Attach right below your top bar (auto-detected thickness)
+python3 wayland_scrollbar.py --position top --offset auto
 
-# Attach to the bottom of all monitors
-python3 wayland_scrollbar.py --position bottom --height 10 --speed 12.0
+# Or attach on left screen edge to completely avoid top bar and bottom dock
+python3 wayland_scrollbar.py --position left
+
+# Or manually specify an offset (e.g. 34px below the top edge)
+python3 wayland_scrollbar.py --position top --offset 34
 ```
 
 The script will:
-1. Attach an invisible drag strip along the top or bottom edge of all monitors on layer `TOP`.
-2. Connect to the display and detect your compositor (**Umbriel** or **Niri**).
+1. Connect to the display and automatically detect your compositor and shell elements (e.g. Noctalia bar/dock).
+2. Attach an invisible drag strip on layer `TOP`, offset so it never conflicts with your bar buttons or dock icons.
 3. Check if `/dev/uinput` is writable:
    - If accessible: creates a virtual touchpad and provides smooth 3-finger trackpad scrolling when clicking & dragging.
    - If restricted: logs a note and falls back to compositor IPC column navigation—no crashes!
@@ -69,7 +72,7 @@ PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/python3 /path/to/wayland_scrollbar.py --position top --height 10 --speed 12.0
+ExecStart=/usr/bin/python3 /path/to/wayland_scrollbar.py --position top --offset auto
 Restart=on-failure
 RestartSec=3
 

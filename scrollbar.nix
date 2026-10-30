@@ -9,6 +9,7 @@ let
   enabled = cfg.enable || (legacyCfg.enable or false);
   pkg = if cfg.package != defaultPackage then cfg.package else (legacyCfg.package or cfg.package);
   position = cfg.position;
+  offsetArg = if cfg.offset == "auto" then "--offset auto" else "--offset ${toString cfg.offset}";
   height = if cfg.height != 10 then cfg.height else (legacyCfg.height or cfg.height);
   speed = if cfg.speed != 12.0 then cfg.speed else (legacyCfg.speed or cfg.speed);
 in
@@ -23,9 +24,15 @@ in
     };
 
     position = lib.mkOption {
-      type = lib.types.enum [ "top" "bottom" ];
+      type = lib.types.enum [ "top" "bottom" "left" "right" ];
       default = "top";
-      description = "Screen edge to attach the scrollbar to: 'top' or 'bottom'.";
+      description = "Screen edge to attach the scrollbar to: 'top', 'bottom', 'left', or 'right'.";
+    };
+
+    offset = lib.mkOption {
+      type = lib.types.either lib.types.int (lib.types.enum [ "auto" ]);
+      default = "auto";
+      description = "Offset in pixels from screen edge, or 'auto' to automatically avoid bars/docks.";
     };
 
     height = lib.mkOption {
@@ -76,7 +83,7 @@ in
       };
 
       Service = {
-        ExecStart = "${pkg}/bin/wayland-scrollbar --position ${position} --height ${toString height} --speed ${toString speed}";
+        ExecStart = "${pkg}/bin/wayland-scrollbar --position ${position} ${offsetArg} --height ${toString height} --speed ${toString speed}";
         Restart = "on-failure";
         RestartSec = "3";
       };
